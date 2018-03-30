@@ -1,0 +1,176 @@
+#!/bin/bash
+
+set -e
+set -o pipefail
+
+usage() {
+  echo "Usage: git-autosave <command> [options]"
+  echo ""
+  echo "Commands:"
+  echo "  start               Start watching the current directory for changes"
+  echo "  list                List all autosaved states"
+  echo "  show <index>        Show the diff of the autosaved state at index and HEAD"
+  echo "  restore <index>     Resets HEAD to the state specified at index"
+  echo "  save-working-dir    Save the current working directory's state"
+
+  exit 1
+}
+
+start() {
+  echo "Watching for changes..."
+
+  fswatch -0 -e "\.git" . | xargs -0 -n 1 "git-autosave" "save-working-dir"
+}
+
+save_working_dir() {
+  local name
+  local tree_hash
+
+  name=$(date +"%s")
+  echo "Saving working dir ($name)"
+
+  tree_hash=$(write_tree ".")
+  git update-ref "refs/autosave/$name" "$tree_hash"
+}
+
+get_all_names() {
+  git for-each-ref --format '%(refname:lstrip=2)' --sort=-refname refs/autosave
+}
+
+list() {
+  local names
+  local date
+  local index
+
+  names=$(get_all_names)
+  index=0
+  for name in $names; do
+    date=$(date -r "$name")
+    echo "$index: $date"
+    index=$((index + 1))
+  done
+}
+
+show() {
+  local show_index="$1"
+  local index
+  local names
+  local name
+  local date
+  local hash
+
+  if [ ! "$show_index" ]; then
+    usage
+  fi
+
+  names=$(get_all_names)
+  index=0
+  for name in $names; do
+    if [ "$index" = "$show_index" ]; then
+      hash=$(git show-ref --hash "refs/autosave/$name")
+      git diff "HEAD..$hash"
+
+      exit 0
+    fi
+
+    index=$((index + 1))
+  done
+
+  echo "Error: Nothing found for index $show_index"
+  exit 1
+}
+
+restore() {
+  # TODO this should not take the index, since the indexing could have changed
+  # in the meantime if a new autosave has already been created since last
+  # list'ing or show'ing.
+  local restore_index="$1"
+  local index
+  local names
+  local name
+  local hash
+
+  if [ ! "$restore_index" ]; then
+    usage
+  fi
+
+  names=$(get_all_names)
+  index=0
+  for name in $names; do
+    if [ "$index" = "$restore_index" ]; then
+      hash=$(git show-ref --hash "refs/autosave/$name")
+
+      git reset --hard "$hash"
+
+      exit 0
+    fi
+
+    index=$((index + 1))
+  done
+
+  echo "Error: Nothing found for index $restore_index"
+  exit 1
+}
+
+write_tree() {
+  local dir="$1"
+  local tree=""
+  local filename
+  local file
+  local hash
+
+  for file in $dir/*; do
+    filename=$(basename "$file")
+
+    if [ -f "$file" ]; then
+      hash=$(git hash-object -w -- "$file")
+      # TODO set correct mode
+      tree="${tree}100644 blob $hash\t$filename\n"
+    elif [ -d "$file" ]; then
+      write_tree "$file" 1>/dev/null
+    fi
+  done
+
+  printf "%b" "$tree" | git mktree
+}
+
+if [ $# = 0 ]; then
+  usage
+fi
+
+cmdname="$1"
+shift
+
+#while [[ $# -gt 0 ]]; do
+#  key="$1"
+#  case "$key" in
+#    -s|--searchpath)
+#      shift
+#      shift
+#      ;;
+#    *)
+#      usage
+#      ;;
+#  esac
+#done
+
+case "$cmdname" in
+  start)
+    start
+    ;;
+  list)
+    list
+    ;;
+  show)
+    show "$@"
+    ;;
+  restore)
+    restore "$@"
+    ;;
+  save-working-dir)
+    save_working_dir
+    ;;
+  *)
+    usage
+    ;;
+esac
