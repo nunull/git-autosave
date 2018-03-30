@@ -9,8 +9,8 @@ usage() {
   echo "Commands:"
   echo "  start               Start watching the current directory for changes"
   echo "  list                List all autosaved states"
-  echo "  show <index>        Show the diff of the autosaved state at index and HEAD"
-  echo "  restore <index>     Resets HEAD to the state specified at index"
+  echo "  show <hash>         Show the diff of the given autosaved state and HEAD"
+  echo "  restore <hash>      Resets HEAD to the given state"
   echo "  save-working-dir    Save the current working directory's state"
 
   exit 1
@@ -23,93 +23,49 @@ start() {
 }
 
 save_working_dir() {
-  local name
   local tree_hash
+  local parent
+  local message
+  local commit_hash
 
-  name=$(date +"%s")
-  echo "Saving working dir ($name)"
+  echo "Saving working dir"
 
+  # Create tree
   tree_hash=$(write_tree ".")
-  git update-ref "refs/autosave/$name" "$tree_hash"
-}
 
-get_all_names() {
-  git for-each-ref --format '%(refname:lstrip=2)' --sort=-refname refs/autosave
+  # Create commit
+  parent=$(git show-ref --hash refs/autosave || true)
+  message="Autosave $(date)"
+  commit_hash=$(git commit-tree ${parent:+ -p "$parent"} -m "$message" "$tree_hash")
+
+  # Create ref
+  git update-ref "refs/autosave" "$commit_hash"
 }
 
 list() {
-  local names
-  local date
-  local index
-
-  names=$(get_all_names)
-  index=0
-  for name in $names; do
-    date=$(date -r "$name")
-    echo "$index: $date"
-    index=$((index + 1))
-  done
+  git log --pretty=short -p autosave
 }
 
 show() {
-  local show_index="$1"
-  local index
-  local names
-  local name
-  local date
-  local hash
+  local hash="$1"
 
-  if [ ! "$show_index" ]; then
+  if [ ! "$hash" ]; then
     usage
   fi
 
-  names=$(get_all_names)
-  index=0
-  for name in $names; do
-    if [ "$index" = "$show_index" ]; then
-      hash=$(git show-ref --hash "refs/autosave/$name")
-      git diff "HEAD..$hash"
-
-      exit 0
-    fi
-
-    index=$((index + 1))
-  done
-
-  echo "Error: Nothing found for index $show_index"
-  exit 1
+  git diff "HEAD..$hash"
 }
 
 restore() {
-  # TODO this should not take the index, since the indexing could have changed
-  # in the meantime if a new autosave has already been created since last
-  # list'ing or show'ing.
-  local restore_index="$1"
-  local index
-  local names
-  local name
-  local hash
+  local hash="$1"
+  local patch
 
-  if [ ! "$restore_index" ]; then
+  if [ ! "$hash" ]; then
     usage
   fi
 
-  names=$(get_all_names)
-  index=0
-  for name in $names; do
-    if [ "$index" = "$restore_index" ]; then
-      hash=$(git show-ref --hash "refs/autosave/$name")
-
-      git reset --hard "$hash"
-
-      exit 0
-    fi
-
-    index=$((index + 1))
-  done
-
-  echo "Error: Nothing found for index $restore_index"
-  exit 1
+  patch=$(git diff-tree -p "HEAD..$hash")
+  git apply <(echo "$patch")
 }
 
 write_tree() {
