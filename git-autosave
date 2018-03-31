@@ -28,12 +28,11 @@ start() {
     exit 0
   fi
 
-  if ! git diff --exit-code autosave >/dev/null 2>&1; then
+  if create_patch autosave --exit-code >/dev/null; then
     exit 0
   fi
 
-  # TODO make sure conditions are correct
-  #save_working_dir
+  save_working_dir
 }
 
 save_working_dir() {
@@ -43,7 +42,9 @@ save_working_dir() {
   local message
   local commit_hash
 
-  echo "Saving working dir"
+  if [ "$AUTOSAVE_DEBUG" ]; then
+    echo "Autosave: Saving working dir"
+  fi
 
   # Create tree
   tree_hash=$(write_tree ".")
@@ -81,8 +82,6 @@ show() {
 restore() {
   local hash="$1"
   local patch
-  local tmp_tree_hash
-  local tmp_commit_hash
 
   if [ ! "$hash" ]; then
     usage
@@ -93,17 +92,26 @@ restore() {
     exit 1
   fi
 
-  # Create a temporary commit
-  tmp_tree_hash=$(write_tree ".")
-  tmp_commit_hash=$(commit_tree "$tmp_tree_hash" "Autosave temporary")
-
   # Create patch
-  patch=$(git diff-tree -p "$tmp_commit_hash" "$hash")
+  patch=$(create_patch "$hash")
 
   # Apply patch
   echo "Applying patch..."
   echo "$patch"
   git apply <(echo "$patch")
+}
+
+create_patch() {
+  local hash="$1"
+  local tmp_tree_hash
+  local tmp_commit_hash
+
+  # Create a temporary commit
+  tmp_tree_hash=$(write_tree ".")
+  tmp_commit_hash=$(commit_tree "$tmp_tree_hash" "Autosave temporary")
+
+  # Create patch
+  git diff-tree -p "${@:2}" "$tmp_commit_hash" "$hash"
 }
 
 commit_tree() {
