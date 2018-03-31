@@ -16,13 +16,28 @@ usage() {
   exit 1
 }
 
-start() {
-  echo "Watching for changes..."
+init() {
+  # TODO
+  echo 'export PROMPT_COMMAND="pwd"'
+  # shellcheck disable=SC2016
+  echo 'precmd() { eval "$PROMPT_COMMAND" }'
+}
 
-  fswatch -0 -e "\.git" . | xargs -0 -n 1 "git-autosave" "save-working-dir"
+start() {
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    exit 0
+  fi
+
+  if ! git diff --exit-code autosave >/dev/null 2>&1; then
+    exit 0
+  fi
+
+  # TODO make sure conditions are correct
+  #save_working_dir
 }
 
 save_working_dir() {
+  local ref="refs/autosave"
   local tree_hash
   local parent
   local message
@@ -34,15 +49,16 @@ save_working_dir() {
   tree_hash=$(write_tree ".")
 
   # Create commit
-  parent=$(git show-ref --hash refs/autosave || true)
+  parent=$(git show-ref --hash "$ref" || true)
   message="Autosave $(date)"
-  commit_hash=$(git commit-tree ${parent:+ -p "$parent"} -m "$message" "$tree_hash")
+  commit_hash=$(commit_tree "$tree_hash" "$message" "$parent")
 
   # Create ref
-  git update-ref "refs/autosave" "$commit_hash"
+  git update-ref "$ref" "$commit_hash"
 }
 
 list() {
+  # TODO this should diff with the current working directory not parents
   git log --pretty=short -p autosave
 }
 
@@ -53,19 +69,49 @@ show() {
     usage
   fi
 
+  if ! is_valid_hash "$hash"; then
+    echo "Error: Not a valid hash: $hash"
+    exit 1
+  fi
+
+  # TODO this should diff with the current working directory not HEAD
   git diff "HEAD..$hash"
 }
 
 restore() {
   local hash="$1"
   local patch
+  local tmp_tree_hash
+  local tmp_commit_hash
 
   if [ ! "$hash" ]; then
     usage
   fi
 
-  patch=$(git diff-tree -p "HEAD..$hash")
+  if ! is_valid_hash "$hash"; then
+    echo "Error: Not a valid hash: $hash"
+    exit 1
+  fi
+
+  # Create a temporary commit
+  tmp_tree_hash=$(write_tree ".")
+  tmp_commit_hash=$(commit_tree "$tmp_tree_hash" "Autosave temporary")
+
+  # Create patch
+  patch=$(git diff-tree -p "$tmp_commit_hash" "$hash")
+
+  # Apply patch
+  echo "Applying patch..."
+  echo "$patch"
   git apply <(echo "$patch")
+}
+
+commit_tree() {
+  local tree_hash="$1"
+  local message="$2"
+  local parent="$3"
+
+  git commit-tree ${parent:+ -p "$parent"} -m "$message" "$tree_hash"
 }
 
 write_tree() {
@@ -90,25 +136,18 @@ write_tree() {
   printf "%b" "$tree" | git mktree
 }
 
+is_valid_hash() {
+  local hash="$1"
+
+  [ "$(git rev-parse "$hash")" = "$hash" ]
+}
+
 if [ $# = 0 ]; then
   usage
 fi
 
 cmdname="$1"
 shift
-
-#while [[ $# -gt 0 ]]; do
-#  key="$1"
-#  case "$key" in
-#    -s|--searchpath)
-#      shift
-#      shift
-#      ;;
-#    *)
-#      usage
-#      ;;
-#  esac
-#done
 
 case "$cmdname" in
   start)
