@@ -127,6 +127,7 @@ write_tree() {
   local tree=""
   local filename
   local file
+  local mode
   local hash
 
   for file in $dir/*; do
@@ -134,14 +135,25 @@ write_tree() {
 
     if [ -f "$file" ]; then
       hash=$(git hash-object -w -- "$file")
-      # TODO set correct mode
-      tree="${tree}100644 blob $hash\t$filename\n"
+      mode="100$(get_file_mode "$file")"
+      tree="${tree}${mode} blob $hash\t$filename\n"
     elif [ -d "$file" ]; then
       write_tree "$file" 1>/dev/null
     fi
   done
 
   printf "%b" "$tree" | git mktree
+}
+
+get_file_mode() {
+  case $(uname -s) in
+    Darwin)
+      stat -f '%A' "$file"
+      ;;
+    *)
+      stat -c '%A' "$file"
+      ;;
+  esac
 }
 
 is_valid_hash() {
@@ -171,7 +183,7 @@ case "$cmdname" in
     restore "$@"
     ;;
   precmd)
-    precmd 
+    precmd
     ;;
   save-working-dir)
     save_working_dir
