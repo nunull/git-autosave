@@ -6,24 +6,24 @@ set -o pipefail
 usage() {
   echo "Usage: git-autosave <command> [options]"
   echo ""
-  echo "Commands:"
-  echo "  start               Start watching the current directory for changes"
+  echo "Common Commands:"
+  echo "  init                Output ment to be eval'ed to initialize git-autosave"
   echo "  list                List all autosaved states"
   echo "  show <hash>         Show the diff of the given autosaved state and HEAD"
   echo "  restore <hash>      Resets HEAD to the given state"
-  echo "  save-working-dir    Save the current working directory's state"
 
   exit 1
 }
 
 init() {
-  # TODO
-  echo 'export PROMPT_COMMAND="pwd"'
-  # shellcheck disable=SC2016
-  echo 'precmd() { eval "$PROMPT_COMMAND" }'
+  if [[ $SHELL = *zsh ]]; then
+    echo 'precmd() { git-autosave precmd }'
+  else
+    echo 'export PROMPT_COMMAND="git-autosave precmd"'
+  fi
 }
 
-start() {
+precmd() {
   if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     exit 0
   fi
@@ -158,8 +158,8 @@ cmdname="$1"
 shift
 
 case "$cmdname" in
-  start)
-    start
+  init)
+    init
     ;;
   list)
     list
@@ -169,6 +169,9 @@ case "$cmdname" in
     ;;
   restore)
     restore "$@"
+    ;;
+  precmd)
+    precmd 
     ;;
   save-working-dir)
     save_working_dir
