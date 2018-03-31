@@ -59,8 +59,26 @@ save_working_dir() {
 }
 
 list() {
-  # TODO this should diff with the current working directory not parents
-  git log --pretty=short -p autosave
+  list_ | less
+}
+
+list_() {
+  local hash
+  local tmp_tree_hash
+  local tmp_commit_hash
+
+  # Create a temporary commit
+  tmp_tree_hash=$(write_tree ".")
+  tmp_commit_hash=$(commit_tree "$tmp_tree_hash" "Autosave temporary")
+
+  while read -r hash; do
+    git --no-pager show \
+      --format="%C(yellow)commit %H%Creset%nDate: %ad%n" \
+      --color=always \
+      --no-patch "$hash"
+    git diff --color=always "$tmp_commit_hash" "$hash"
+    echo ""
+  done < <(git rev-list autosave)
 }
 
 show() {
@@ -75,8 +93,7 @@ show() {
     exit 1
   fi
 
-  # TODO this should diff with the current working directory not HEAD
-  git diff "HEAD..$hash"
+  create_patch "$hash"
 }
 
 restore() {
