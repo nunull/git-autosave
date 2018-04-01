@@ -11,6 +11,8 @@ usage() {
   echo "  list                List all autosaved states"
   echo "  show <hash>         Show the diff of the given autosaved state and HEAD"
   echo "  restore <hash>      Resets HEAD to the given state"
+  echo "  save-working-dir    Save the current working directory as a commmit"
+  echo "                      This should be run from the root of a git repository"
 
   exit 1
 }
@@ -42,7 +44,7 @@ save_working_dir() {
   local message
   local commit_hash
 
-  if [ "$AUTOSAVE_DEBUG" ]; then
+  if [ "$GIT_AUTOSAVE_DEBUG" ]; then
     echo "Autosave: Saving working dir"
   fi
 
